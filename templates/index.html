@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waymo Motion Dataset Visualizer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1>🚗 Waymo Motion Dataset Visualizer</h1>
+
+            <!-- 파일 검색 -->
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="TFRecord 파일 검색...">
+                    <div id="search-results" class="search-results hidden"></div>
+                </div>
+            </div>
+
+            <div class="dataset-selector">
+                <div class="selector-group">
+                    <label for="dataset-select">Dataset:</label>
+                    <select id="dataset-select">
+                        <option value="">폴더 선택...</option>
+                    </select>
+                </div>
+                <div class="selector-group">
+                    <label for="file-select">File:</label>
+                    <select id="file-select" disabled>
+                        <option value="">파일 선택...</option>
+                    </select>
+                    <button id="btn-load" disabled>Load</button>
+                </div>
+                <div class="selector-group">
+                    <label for="scenario-select">Scenario:</label>
+                    <select id="scenario-select" disabled>
+                        <option value="">시나리오 선택...</option>
+                    </select>
+                    <span id="scenario-info"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 레이어 컨트롤 패널 -->
+        <div class="layer-panel">
+            <div class="layer-group">
+                <h3>Objects</h3>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #00FF00;"></span>
+                    <input type="checkbox" data-layer="sdc" checked>
+                    <span>SDC (자율주행차)</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #4A90D9;"></span>
+                    <input type="checkbox" data-layer="vehicles" checked>
+                    <span>Vehicles</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #FF9500;"></span>
+                    <input type="checkbox" data-layer="pedestrians" checked>
+                    <span>Pedestrians</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #AF52DE;"></span>
+                    <input type="checkbox" data-layer="cyclists" checked>
+                    <span>Cyclists</span>
+                </label>
+            </div>
+
+            <div class="layer-group">
+                <h3>Map</h3>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #8E8E93;"></span>
+                    <input type="checkbox" data-layer="lanes" checked>
+                    <span>Lanes</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #FFFFFF;"></span>
+                    <input type="checkbox" data-layer="road_lines" checked>
+                    <span>Road Lines</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #FFCC00;"></span>
+                    <input type="checkbox" data-layer="road_edges" checked>
+                    <span>Road Edges</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #5AC8FA;"></span>
+                    <input type="checkbox" data-layer="crosswalks" checked>
+                    <span>Crosswalks</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator" style="background-color: #FF3B30;"></span>
+                    <input type="checkbox" data-layer="stop_signs" checked>
+                    <span>Stop Signs</span>
+                </label>
+            </div>
+
+            <div class="layer-group">
+                <h3>Dynamic</h3>
+                <label class="layer-checkbox">
+                    <span class="color-indicator traffic-light-indicator"></span>
+                    <input type="checkbox" data-layer="traffic_lights" checked>
+                    <span>Traffic Lights</span>
+                </label>
+                <label class="layer-checkbox">
+                    <span class="color-indicator"
+                        style="background: linear-gradient(90deg, #00d9ff, transparent);"></span>
+                    <input type="checkbox" data-layer="trajectories" checked>
+                    <span>Trajectories (궤적)</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 캔버스 컨테이너 -->
+        <div class="canvas-container">
+            <canvas id="main-canvas"></canvas>
+            <div class="canvas-info">
+                <span id="mouse-position">X: 0, Y: 0</span>
+                <span id="zoom-level">Zoom: 100%</span>
+                <div id="scale-bar" class="scale-bar">
+                    <div class="scale-bar-line"></div>
+                    <span id="scale-value">10 m</span>
+                </div>
+            </div>
+            <!-- 객체 정보 팝업 -->
+            <div id="object-info-popup" class="object-info-popup hidden">
+                <div class="popup-header">
+                    <span id="popup-title">객체 정보</span>
+                    <button id="popup-close">✕</button>
+                </div>
+                <div id="popup-content" class="popup-content"></div>
+            </div>
+        </div>
+
+        <!-- 타임라인 컨트롤 -->
+        <div class="timeline-panel">
+            <div class="timeline-info">
+                <span id="step-display">Step: 0 / 0</span>
+                <span id="time-display">Time: 0.0s</span>
+                <span id="time-type" class="past">PAST</span>
+            </div>
+            <div class="timeline-slider">
+                <input type="range" id="timeline-slider" min="0" max="90" value="0">
+            </div>
+            <div class="timeline-controls">
+                <button id="btn-first" title="처음으로">⏮</button>
+                <button id="btn-prev" title="이전">|◀</button>
+                <button id="btn-play" title="재생">▶</button>
+                <button id="btn-next" title="다음">▶|</button>
+                <button id="btn-last" title="마지막으로">⏭</button>
+                <label class="speed-control">
+                    <span>Speed:</span>
+                    <select id="playback-speed">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                    </select>
+                </label>
+                <label class="playback-mode-control">
+                    <span>Mode:</span>
+                    <select id="playback-mode">
+                        <option value="once">1번 재생</option>
+                        <option value="loop" selected>반복 재생</option>
+                        <option value="continuous">연속 재생</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <!-- 로딩 오버레이 -->
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="loading-spinner"></div>
+            <span>데이터 로딩 중...</span>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/visualizer.js') }}"></script>
+</body>
+
+</html>

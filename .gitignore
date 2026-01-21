@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+*.tfrecord
+/scenario/
+/uncompressed/
+*.tmp
+.gemini/
+.agent/
+.system_generated/
+requirements.txt
+# Only include necessary code and docs
+!README.md
+!walkthrough.md
+!requirements.txt
