@@ -70,8 +70,9 @@ python app.py --mode public
 python app.py --mode public --port 8080
 ```
 
-> ✅ 공개 서버 모드 시 Windows(netsh) 및 Ubuntu(ufw)에서 방화벽 포트가 자동으로 열립니다.
-> ⚠️ 관리자/sudo 권한이 필요합니다.
+> ✅ 공개 서버 모드 시 방화벽 포트가 닫혀 있으면 자동으로 열립니다 (Windows: netsh, Ubuntu: ufw).
+> ✅ 이미 열려 있는 경우 중복 설정을 건너뜁니다.
+> ⚠️ 방화벽 설정에는 관리자/sudo 권한이 필요합니다.
 
 ---
 

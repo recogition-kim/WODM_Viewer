@@ -9,8 +9,73 @@ import argparse
 import threading
 import subprocess
 import sys
+import socket
 from flask import Flask, render_template, jsonify, request
 from data_loader import WaymoDataLoader
+
+
+def is_port_open(port: int, host: str = '0.0.0.0', timeout: float = 1.0) -> bool:
+    """
+    지정된 포트가 외부에서 접근 가능한지 확인합니다.
+    방화벽이 열려 있으면 True, 닫혀 있으면 False를 반환합니다.
+    
+    Args:
+        port: 확인할 포트 번호
+        host: 바인딩할 호스트 (기본값: 0.0.0.0)
+        timeout: 타임아웃 시간 (초)
+    
+    Returns:
+        포트가 사용 가능하면 True, 그렇지 않으면 False
+    """
+    try:
+        # 소켓을 열어 포트가 바인딩 가능한지 확인
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+        sock.close()
+        return True
+    except socket.error:
+        return False
+
+
+def is_firewall_port_open(port: int) -> bool:
+    """
+    방화벽에서 해당 포트가 열려 있는지 확인합니다.
+    
+    Args:
+        port: 확인할 포트 번호
+    
+    Returns:
+        방화벽 규칙이 존재하면 True, 없으면 False
+    """
+    if sys.platform == 'win32':
+        try:
+            # Windows: netsh로 방화벽 규칙 확인
+            result = subprocess.run(
+                ['netsh', 'advfirewall', 'firewall', 'show', 'rule', 
+                 f'name=Waymo Visualizer Port {port}'],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            # 규칙이 존재하면 "규칙 이름:" 또는 "Rule Name:"이 출력됨
+            return '규칙 이름:' in result.stdout or 'Rule Name:' in result.stdout
+        except Exception:
+            return False
+    elif sys.platform == 'linux':
+        try:
+            # Linux: ufw status로 확인
+            result = subprocess.run(
+                ['sudo', 'ufw', 'status'],
+                capture_output=True,
+                text=True
+            )
+            return f'{port}/tcp' in result.stdout and 'ALLOW' in result.stdout
+        except Exception:
+            return False
+    else:
+        return False
 
 
 def open_firewall_port(port: int, rule_name: str = None) -> bool:
@@ -509,9 +574,12 @@ if __name__ == '__main__':
         print(f"모든 네트워크 인터페이스에서 접속 가능")
         print(f"접속 주소: http://<서버 IP 주소>:{port}")
         
-        # 방화벽 포트 열기 시도
-        print(f"\n🔓 방화벽 포트 열기 시도 중...")
-        open_firewall_port(port)
+        # 방화벽 포트가 닫혀 있을 때만 열기 시도
+        if is_firewall_port_open(port):
+            print(f"\n✅ 방화벽 포트 {port}이(가) 이미 열려 있습니다.")
+        else:
+            print(f"\n🔓 방화벽 포트 열기 시도 중...")
+            open_firewall_port(port)
         
         print()
         app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
