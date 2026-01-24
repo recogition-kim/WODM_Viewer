@@ -7,8 +7,116 @@ import os
 import glob
 import argparse
 import threading
+import subprocess
+import sys
 from flask import Flask, render_template, jsonify, request
 from data_loader import WaymoDataLoader
+
+
+def open_firewall_port(port: int, rule_name: str = None) -> bool:
+    """
+    방화벽에서 TCP 포트를 엽니다.
+    Windows는 netsh, Ubuntu/Linux는 ufw를 사용합니다.
+    
+    Args:
+        port: 열 포트 번호
+        rule_name: 방화벽 규칙 이름 (Windows 전용, 기본값: 'Waymo Visualizer Port {port}')
+    
+    Returns:
+        성공 여부 (True/False)
+    """
+    if sys.platform == 'win32':
+        return _open_firewall_port_windows(port, rule_name)
+    elif sys.platform == 'linux':
+        return _open_firewall_port_linux(port)
+    else:
+        print(f"⚠️  방화벽 자동 설정이 지원되지 않는 OS입니다: {sys.platform}")
+        print(f"   수동으로 TCP 포트 {port}을 열어주세요.")
+        return False
+
+
+def _open_firewall_port_windows(port: int, rule_name: str = None) -> bool:
+    """Windows 방화벽에서 TCP 포트를 엽니다."""
+    if rule_name is None:
+        rule_name = f"Waymo Visualizer Port {port}"
+    
+    try:
+        # 기존 규칙 삭제 (있으면)
+        delete_cmd = [
+            'netsh', 'advfirewall', 'firewall', 'delete', 'rule',
+            f'name={rule_name}'
+        ]
+        subprocess.run(delete_cmd, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # 인바운드 규칙 추가
+        add_cmd = [
+            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+            f'name={rule_name}',
+            'dir=in',
+            'action=allow',
+            'protocol=TCP',
+            f'localport={port}',
+            'profile=any'
+        ]
+        result = subprocess.run(add_cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        if result.returncode == 0:
+            print(f"✅ Windows 방화벽 규칙 추가 완료: TCP 포트 {port}")
+            return True
+        else:
+            print(f"❌ Windows 방화벽 규칙 추가 실패: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Windows 방화벽 설정 오류: {e}")
+        print("   관리자 권한으로 실행하거나 수동으로 방화벽을 설정하세요.")
+        return False
+
+
+def _open_firewall_port_linux(port: int) -> bool:
+    """Ubuntu/Linux 방화벽(ufw)에서 TCP 포트를 엽니다."""
+    try:
+        # ufw 사용 가능한지 확인
+        check_ufw = subprocess.run(['which', 'ufw'], capture_output=True)
+        
+        if check_ufw.returncode == 0:
+            # ufw로 포트 열기
+            result = subprocess.run(
+                ['sudo', 'ufw', 'allow', f'{port}/tcp'],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"✅ ufw 방화벽 규칙 추가 완료: TCP 포트 {port}")
+                return True
+            else:
+                print(f"❌ ufw 방화벽 규칙 추가 실패: {result.stderr}")
+                print("   sudo 권한으로 실행하거나 수동으로 설정하세요:")
+                print(f"   sudo ufw allow {port}/tcp")
+                return False
+        else:
+            # ufw가 없으면 iptables 시도
+            print("ℹ️  ufw를 찾을 수 없습니다. iptables를 시도합니다...")
+            result = subprocess.run(
+                ['sudo', 'iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(port), '-j', 'ACCEPT'],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"✅ iptables 방화벽 규칙 추가 완료: TCP 포트 {port}")
+                return True
+            else:
+                print(f"❌ iptables 방화벽 규칙 추가 실패: {result.stderr}")
+                print("   sudo 권한으로 실행하거나 수동으로 설정하세요:")
+                print(f"   sudo iptables -A INPUT -p tcp --dport {port} -j ACCEPT")
+                return False
+                
+    except Exception as e:
+        print(f"❌ Linux 방화벽 설정 오류: {e}")
+        print("   sudo 권한으로 실행하거나 수동으로 방화벽을 설정하세요.")
+        return False
 
 app = Flask(__name__)
 
@@ -400,7 +508,12 @@ if __name__ == '__main__':
         print(f"\n[공개 서버 모드]")
         print(f"모든 네트워크 인터페이스에서 접속 가능")
         print(f"접속 주소: http://<서버 IP 주소>:{port}")
-        print(f"\n⚠️  주의: 방화벽에서 TCP 포트 {port}을 열어야 합니다.\n")
+        
+        # 방화벽 포트 열기 시도
+        print(f"\n🔓 방화벽 포트 열기 시도 중...")
+        open_firewall_port(port)
+        
+        print()
         app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
     else:
         # 개발 서버 모드

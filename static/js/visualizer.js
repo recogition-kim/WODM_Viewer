@@ -13,6 +13,10 @@ const COLORS = {
     road_edges: '#FFCC00',
     crosswalks: '#5AC8FA',
     stop_signs: '#FF3B30',
+    speed_bumps: '#FF6B6B',
+    driveways: '#9B59B6',
+    tracks_to_predict: '#FF00FF',  // 예측 대상 하이라이트
+    objects_of_interest: '#00FFFF',  // 관심 객체 하이라이트
     traffic_lights: {
         STOP: '#FF3B30',
         CAUTION: '#FFCC00',
@@ -24,6 +28,13 @@ const COLORS = {
         FLASHING_STOP: '#FF6B6B',
         FLASHING_CAUTION: '#FFE066'
     }
+};
+
+// 난이도 레벨 매핑
+const DIFFICULTY_LEVELS = {
+    0: 'NONE',
+    1: 'LEVEL_1',
+    2: 'LEVEL_2'
 };
 
 // ===== 타입 매핑 (정수 → 문자열) =====
@@ -85,8 +96,12 @@ let layerVisibility = {
     road_edges: true,
     crosswalks: true,
     stop_signs: true,
+    speed_bumps: true,
+    driveways: true,
     traffic_lights: true,
-    trajectories: true
+    trajectories: true,
+    tracks_to_predict: true,
+    objects_of_interest: true
 };
 
 // ===== DOM 요소 =====
@@ -675,6 +690,8 @@ function render() {
     if (layerVisibility.road_lines) drawRoadLines();
     if (layerVisibility.road_edges) drawRoadEdges();
     if (layerVisibility.crosswalks) drawCrosswalks();
+    if (layerVisibility.speed_bumps) drawSpeedBumps();
+    if (layerVisibility.driveways) drawDriveways();
     if (layerVisibility.stop_signs) drawStopSigns();
     if (layerVisibility.traffic_lights) drawTrafficLights();
 
@@ -687,6 +704,10 @@ function render() {
     if (layerVisibility.pedestrians) drawAgents('pedestrians');
     if (layerVisibility.cyclists) drawAgents('cyclists');
     if (layerVisibility.sdc) drawSDC();
+
+    // 예측 대상 및 관심 객체 하이라이트
+    if (layerVisibility.tracks_to_predict) drawTracksToPredict();
+    if (layerVisibility.objects_of_interest) drawObjectsOfInterest();
 
     // 선택된 객체 강조 표시
     drawSelectedHighlight();
@@ -714,18 +735,65 @@ function drawLanes() {
 }
 
 function drawRoadLines() {
-    ctx.strokeStyle = COLORS.road_lines;
     ctx.lineWidth = 0.2 / viewState.scale;
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.8;
 
     scenarioData.map_features.road_lines.forEach(line => {
         if (line.polyline.length > 1) {
+            // 타입별 색상 및 스타일 설정
+            const type = line.type || 0;
+            let color = COLORS.road_lines;
+            let dashPattern = [];
+
+            switch (type) {
+                case 1: // BROKEN_SINGLE_WHITE
+                    color = '#FFFFFF';
+                    dashPattern = [1, 0.5];
+                    break;
+                case 2: // SOLID_SINGLE_WHITE
+                    color = '#FFFFFF';
+                    break;
+                case 3: // SOLID_DOUBLE_WHITE
+                    color = '#FFFFFF';
+                    ctx.lineWidth = 0.4 / viewState.scale;
+                    break;
+                case 4: // BROKEN_SINGLE_YELLOW
+                    color = '#FFCC00';
+                    dashPattern = [1, 0.5];
+                    break;
+                case 5: // BROKEN_DOUBLE_YELLOW
+                    color = '#FFCC00';
+                    dashPattern = [1, 0.5];
+                    ctx.lineWidth = 0.4 / viewState.scale;
+                    break;
+                case 6: // SOLID_SINGLE_YELLOW
+                    color = '#FFCC00';
+                    break;
+                case 7: // SOLID_DOUBLE_YELLOW
+                    color = '#FFCC00';
+                    ctx.lineWidth = 0.4 / viewState.scale;
+                    break;
+                case 8: // PASSING_DOUBLE_YELLOW
+                    color = '#FFCC00';
+                    ctx.lineWidth = 0.4 / viewState.scale;
+                    break;
+                default:
+                    color = COLORS.road_lines;
+            }
+
+            ctx.strokeStyle = color;
+            ctx.setLineDash(dashPattern);
+
             ctx.beginPath();
             ctx.moveTo(line.polyline[0][0], line.polyline[0][1]);
             line.polyline.slice(1).forEach(pt => {
                 ctx.lineTo(pt[0], pt[1]);
             });
             ctx.stroke();
+
+            // 선 두께와 dash 패턴 리셋
+            ctx.lineWidth = 0.2 / viewState.scale;
+            ctx.setLineDash([]);
         }
     });
 
@@ -793,6 +861,151 @@ function drawTrafficLights() {
             ctx.arc(light.stop_point[0], light.stop_point[1], 0.8, 0, Math.PI * 2);
             ctx.fill();
         }
+    });
+}
+
+function drawSpeedBumps() {
+    if (!scenarioData.map_features.speed_bumps) return;
+
+    ctx.fillStyle = COLORS.speed_bumps;
+    ctx.globalAlpha = 0.5;
+
+    scenarioData.map_features.speed_bumps.forEach(bump => {
+        if (bump.polygon && bump.polygon.length > 2) {
+            ctx.beginPath();
+            ctx.moveTo(bump.polygon[0][0], bump.polygon[0][1]);
+            bump.polygon.slice(1).forEach(pt => {
+                ctx.lineTo(pt[0], pt[1]);
+            });
+            ctx.closePath();
+            ctx.fill();
+        }
+    });
+
+    ctx.globalAlpha = 1;
+}
+
+function drawDriveways() {
+    if (!scenarioData.map_features.driveways) return;
+
+    ctx.fillStyle = COLORS.driveways;
+    ctx.globalAlpha = 0.4;
+
+    scenarioData.map_features.driveways.forEach(driveway => {
+        if (driveway.polygon && driveway.polygon.length > 2) {
+            ctx.beginPath();
+            ctx.moveTo(driveway.polygon[0][0], driveway.polygon[0][1]);
+            driveway.polygon.slice(1).forEach(pt => {
+                ctx.lineTo(pt[0], pt[1]);
+            });
+            ctx.closePath();
+            ctx.fill();
+        }
+    });
+
+    ctx.globalAlpha = 1;
+}
+
+function drawTracksToPredict() {
+    if (!scenarioData.tracks_to_predict || scenarioData.tracks_to_predict.length === 0) return;
+
+    scenarioData.tracks_to_predict.forEach(pred => {
+        const trackIndex = pred.track_index;
+        const difficulty = pred.difficulty;
+
+        // 해당 트랙 찾기
+        let track = null;
+        let allTracks = [
+            ...(scenarioData.tracks.vehicles || []),
+            ...(scenarioData.tracks.pedestrians || []),
+            ...(scenarioData.tracks.cyclists || [])
+        ];
+
+        // SDC도 포함
+        if (scenarioData.tracks.sdc) {
+            allTracks.push(scenarioData.tracks.sdc);
+        }
+
+        // 트랙 인덱스로 찾기 (원본 시나리오의 tracks 배열 인덱스 기준)
+        // 모든 트랙을 순회하면서 해당 인덱스의 트랙 찾기
+        for (const t of allTracks) {
+            if (t.id === trackIndex || allTracks.indexOf(t) === trackIndex) {
+                track = t;
+                break;
+            }
+        }
+
+        if (!track) return;
+
+        const state = track.states[currentStep];
+        if (!state || !state.valid) return;
+
+        // 난이도에 따른 색상
+        let color = COLORS.tracks_to_predict;
+        if (difficulty === 2) {
+            color = '#FF0000';  // LEVEL_2: 빨강
+        } else if (difficulty === 1) {
+            color = '#FF00FF';  // LEVEL_1: 마젠타
+        }
+
+        // 다이아몬드 마커 그리기
+        ctx.save();
+        ctx.translate(state.x, state.y);
+
+        const size = 2;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.4 / viewState.scale;
+        ctx.beginPath();
+        ctx.moveTo(0, size);
+        ctx.lineTo(size, 0);
+        ctx.lineTo(0, -size);
+        ctx.lineTo(-size, 0);
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.restore();
+    });
+}
+
+function drawObjectsOfInterest() {
+    if (!scenarioData.objects_of_interest || scenarioData.objects_of_interest.length === 0) return;
+
+    scenarioData.objects_of_interest.forEach(trackIndex => {
+        // 해당 트랙 찾기
+        let track = null;
+        let allTracks = [
+            ...(scenarioData.tracks.vehicles || []),
+            ...(scenarioData.tracks.pedestrians || []),
+            ...(scenarioData.tracks.cyclists || [])
+        ];
+
+        if (scenarioData.tracks.sdc) {
+            allTracks.push(scenarioData.tracks.sdc);
+        }
+
+        for (const t of allTracks) {
+            if (t.id === trackIndex) {
+                track = t;
+                break;
+            }
+        }
+
+        if (!track) return;
+
+        const state = track.states[currentStep];
+        if (!state || !state.valid) return;
+
+        // 원형 하이라이트 그리기
+        ctx.strokeStyle = COLORS.objects_of_interest;
+        ctx.lineWidth = 0.3 / viewState.scale;
+        ctx.setLineDash([0.5, 0.3]);
+
+        const radius = Math.max(state.length || 4, state.width || 2) / 2 + 1.5;
+        ctx.beginPath();
+        ctx.arc(state.x, state.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
     });
 }
 
@@ -1160,6 +1373,36 @@ function findObjectAtPosition(worldX, worldY) {
         }
     }
 
+    // Speed Bumps 체크
+    if (layerVisibility.speed_bumps && scenarioData.map_features.speed_bumps) {
+        for (const bump of scenarioData.map_features.speed_bumps) {
+            if (bump.polygon && isPointInPolygon(worldX, worldY, bump.polygon)) {
+                return {
+                    type: 'SpeedBump',
+                    typeKo: '과속방지턱',
+                    color: COLORS.speed_bumps,
+                    isMapFeature: true,
+                    feature: bump
+                };
+            }
+        }
+    }
+
+    // Driveways 체크
+    if (layerVisibility.driveways && scenarioData.map_features.driveways) {
+        for (const driveway of scenarioData.map_features.driveways) {
+            if (driveway.polygon && isPointInPolygon(worldX, worldY, driveway.polygon)) {
+                return {
+                    type: 'Driveway',
+                    typeKo: '진입로',
+                    color: COLORS.driveways,
+                    isMapFeature: true,
+                    feature: driveway
+                };
+            }
+        }
+    }
+
     return null;
 }
 
@@ -1243,15 +1486,30 @@ function showObjectInfo(obj) {
     const headingDeg = (state.heading * 180 / Math.PI).toFixed(1);
 
     popupTitle.innerHTML = `<span style="color: ${obj.color}">●</span> ${obj.typeKo} (ID: ${obj.id})`;
-    popupContent.innerHTML = `
+
+    let infoHtml = `
         <div class="info-row"><span class="info-label">타입</span><span class="info-value">${obj.type}</span></div>
         <div class="info-row"><span class="info-label">위치 X</span><span class="info-value">${state.x.toFixed(2)} m</span></div>
         <div class="info-row"><span class="info-label">위치 Y</span><span class="info-value">${state.y.toFixed(2)} m</span></div>
+    `;
+
+    // Z 좌표 추가
+    if (state.z !== undefined) {
+        infoHtml += `<div class="info-row"><span class="info-label">위치 Z</span><span class="info-value">${state.z.toFixed(2)} m</span></div>`;
+    }
+
+    infoHtml += `
         <div class="info-row"><span class="info-label">속도</span><span class="info-value">${speed.toFixed(1)} km/h</span></div>
         <div class="info-row"><span class="info-label">방향</span><span class="info-value">${headingDeg}°</span></div>
         <div class="info-row"><span class="info-label">크기 (L×W)</span><span class="info-value">${state.length?.toFixed(1) || '-'} × ${state.width?.toFixed(1) || '-'} m</span></div>
     `;
 
+    // 높이 추가
+    if (state.height !== undefined) {
+        infoHtml += `<div class="info-row"><span class="info-label">높이</span><span class="info-value">${state.height.toFixed(2)} m</span></div>`;
+    }
+
+    popupContent.innerHTML = infoHtml;
     objectInfoPopup.classList.remove('hidden');
 }
 
@@ -1274,12 +1532,30 @@ function showMapFeatureInfo(obj) {
             const typeName = LANE_TYPES[feature.type] || `UNKNOWN(${feature.type})`;
             contentHtml += `<div class="info-row"><span class="info-label">차로 타입</span><span class="info-value">${typeName}</span></div>`;
         }
+        // 제한 속도
+        if (feature.speed_limit_mph !== undefined && feature.speed_limit_mph !== null) {
+            const speedKmh = (feature.speed_limit_mph * 1.60934).toFixed(0);
+            contentHtml += `<div class="info-row"><span class="info-label">제한속도</span><span class="info-value">${feature.speed_limit_mph} mph (${speedKmh} km/h)</span></div>`;
+        }
+        // 보간 여부
+        if (feature.interpolating !== undefined) {
+            contentHtml += `<div class="info-row"><span class="info-label">보간</span><span class="info-value">${feature.interpolating ? 'Yes' : 'No'}</span></div>`;
+        }
         // 연결 차로 정보 (entry/exit lanes)
         if (feature.entry_lanes && feature.entry_lanes.length > 0) {
             contentHtml += `<div class="info-row"><span class="info-label">진입 차로</span><span class="info-value">${feature.entry_lanes.join(', ')}</span></div>`;
         }
         if (feature.exit_lanes && feature.exit_lanes.length > 0) {
             contentHtml += `<div class="info-row"><span class="info-label">진출 차로</span><span class="info-value">${feature.exit_lanes.join(', ')}</span></div>`;
+        }
+        // 인접 차선
+        if (feature.left_neighbors && feature.left_neighbors.length > 0) {
+            const neighborIds = feature.left_neighbors.map(n => n.feature_id).join(', ');
+            contentHtml += `<div class="info-row"><span class="info-label">좌측 인접</span><span class="info-value">${neighborIds}</span></div>`;
+        }
+        if (feature.right_neighbors && feature.right_neighbors.length > 0) {
+            const neighborIds = feature.right_neighbors.map(n => n.feature_id).join(', ');
+            contentHtml += `<div class="info-row"><span class="info-label">우측 인접</span><span class="info-value">${neighborIds}</span></div>`;
         }
     } else if (obj.type === 'RoadLine') {
         contentHtml += `<div class="info-row"><span class="info-label">포인트 수</span><span class="info-value">${feature.polyline?.length || 0}</span></div>`;
@@ -1299,9 +1575,30 @@ function showMapFeatureInfo(obj) {
         if (feature.position) {
             contentHtml += `<div class="info-row"><span class="info-label">위치 X</span><span class="info-value">${feature.position[0].toFixed(2)} m</span></div>`;
             contentHtml += `<div class="info-row"><span class="info-label">위치 Y</span><span class="info-value">${feature.position[1].toFixed(2)} m</span></div>`;
+            if (feature.position[2] !== undefined) {
+                contentHtml += `<div class="info-row"><span class="info-label">위치 Z</span><span class="info-value">${feature.position[2].toFixed(2)} m</span></div>`;
+            }
         }
         if (feature.lane_ids && feature.lane_ids.length > 0) {
             contentHtml += `<div class="info-row"><span class="info-label">연결 차선</span><span class="info-value">${feature.lane_ids.join(', ')}</span></div>`;
+        }
+    } else if (obj.type === 'SpeedBump') {
+        contentHtml += `<div class="info-row"><span class="info-label">꼭짓점 수</span><span class="info-value">${feature.polygon?.length || 0}</span></div>`;
+        // 중심 좌표 계산
+        if (feature.polygon && feature.polygon.length > 0) {
+            const centerX = feature.polygon.reduce((sum, pt) => sum + pt[0], 0) / feature.polygon.length;
+            const centerY = feature.polygon.reduce((sum, pt) => sum + pt[1], 0) / feature.polygon.length;
+            contentHtml += `<div class="info-row"><span class="info-label">중심 X</span><span class="info-value">${centerX.toFixed(2)} m</span></div>`;
+            contentHtml += `<div class="info-row"><span class="info-label">중심 Y</span><span class="info-value">${centerY.toFixed(2)} m</span></div>`;
+        }
+    } else if (obj.type === 'Driveway') {
+        contentHtml += `<div class="info-row"><span class="info-label">꼭짓점 수</span><span class="info-value">${feature.polygon?.length || 0}</span></div>`;
+        // 중심 좌표 계산
+        if (feature.polygon && feature.polygon.length > 0) {
+            const centerX = feature.polygon.reduce((sum, pt) => sum + pt[0], 0) / feature.polygon.length;
+            const centerY = feature.polygon.reduce((sum, pt) => sum + pt[1], 0) / feature.polygon.length;
+            contentHtml += `<div class="info-row"><span class="info-label">중심 X</span><span class="info-value">${centerX.toFixed(2)} m</span></div>`;
+            contentHtml += `<div class="info-row"><span class="info-label">중심 Y</span><span class="info-value">${centerY.toFixed(2)} m</span></div>`;
         }
     }
 

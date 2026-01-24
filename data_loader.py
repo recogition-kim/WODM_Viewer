@@ -57,11 +57,21 @@ class WaymoDataLoader:
             
         scenario = self.scenarios[scenario_index]
         
+        # tracks_to_predict 추출
+        tracks_to_predict = []
+        for pred in scenario.tracks_to_predict:
+            tracks_to_predict.append({
+                'track_index': pred.track_index,
+                'difficulty': pred.difficulty
+            })
+        
         return {
             'scenario_id': scenario.scenario_id,
             'timestamps': list(scenario.timestamps_seconds),
             'current_time_index': scenario.current_time_index,
             'sdc_track_index': scenario.sdc_track_index,
+            'objects_of_interest': list(scenario.objects_of_interest),
+            'tracks_to_predict': tracks_to_predict,
             'map_features': self._extract_map_features(scenario),
             'tracks': self._extract_tracks(scenario),
             'traffic_lights': self._extract_traffic_lights(scenario)
@@ -75,7 +85,8 @@ class WaymoDataLoader:
             'road_edges': [],
             'crosswalks': [],
             'stop_signs': [],
-            'speed_bumps': []
+            'speed_bumps': [],
+            'driveways': []
         }
         
         for feature in scenario.map_features:
@@ -83,18 +94,65 @@ class WaymoDataLoader:
             
             if feature.HasField('lane'):
                 lane = feature.lane
-                polyline = [[pt.x, pt.y] for pt in lane.polyline]
+                polyline = [[pt.x, pt.y, pt.z] for pt in lane.polyline]
+                
+                # 경계 세그먼트 추출
+                left_boundaries = []
+                for seg in lane.left_boundaries:
+                    left_boundaries.append({
+                        'lane_start_index': seg.lane_start_index,
+                        'lane_end_index': seg.lane_end_index,
+                        'boundary_feature_id': seg.boundary_feature_id,
+                        'boundary_type': seg.boundary_type
+                    })
+                
+                right_boundaries = []
+                for seg in lane.right_boundaries:
+                    right_boundaries.append({
+                        'lane_start_index': seg.lane_start_index,
+                        'lane_end_index': seg.lane_end_index,
+                        'boundary_feature_id': seg.boundary_feature_id,
+                        'boundary_type': seg.boundary_type
+                    })
+                
+                # 인접 차선 추출
+                left_neighbors = []
+                for neighbor in lane.left_neighbors:
+                    left_neighbors.append({
+                        'feature_id': neighbor.feature_id,
+                        'self_start_index': neighbor.self_start_index,
+                        'self_end_index': neighbor.self_end_index,
+                        'neighbor_start_index': neighbor.neighbor_start_index,
+                        'neighbor_end_index': neighbor.neighbor_end_index
+                    })
+                
+                right_neighbors = []
+                for neighbor in lane.right_neighbors:
+                    right_neighbors.append({
+                        'feature_id': neighbor.feature_id,
+                        'self_start_index': neighbor.self_start_index,
+                        'self_end_index': neighbor.self_end_index,
+                        'neighbor_start_index': neighbor.neighbor_start_index,
+                        'neighbor_end_index': neighbor.neighbor_end_index
+                    })
+                
                 features['lanes'].append({
                     'id': feature_id,
                     'polyline': polyline,
                     'type': lane.type if hasattr(lane, 'type') else 0,
+                    'speed_limit_mph': lane.speed_limit_mph if lane.HasField('speed_limit_mph') else None,
+                    'interpolating': lane.interpolating if lane.HasField('interpolating') else False,
                     'entry_lanes': list(lane.entry_lanes) if hasattr(lane, 'entry_lanes') else [],
-                    'exit_lanes': list(lane.exit_lanes) if hasattr(lane, 'exit_lanes') else []
+                    'exit_lanes': list(lane.exit_lanes) if hasattr(lane, 'exit_lanes') else [],
+                    'left_boundaries': left_boundaries,
+                    'right_boundaries': right_boundaries,
+                    'left_neighbors': left_neighbors,
+                    'right_neighbors': right_neighbors
                 })
                 
             elif feature.HasField('road_line'):
                 road_line = feature.road_line
-                polyline = [[pt.x, pt.y] for pt in road_line.polyline]
+                polyline = [[pt.x, pt.y, pt.z] for pt in road_line.polyline]
                 features['road_lines'].append({
                     'id': feature_id,
                     'polyline': polyline,
@@ -103,7 +161,7 @@ class WaymoDataLoader:
                 
             elif feature.HasField('road_edge'):
                 road_edge = feature.road_edge
-                polyline = [[pt.x, pt.y] for pt in road_edge.polyline]
+                polyline = [[pt.x, pt.y, pt.z] for pt in road_edge.polyline]
                 features['road_edges'].append({
                     'id': feature_id,
                     'polyline': polyline,
@@ -112,7 +170,7 @@ class WaymoDataLoader:
                 
             elif feature.HasField('crosswalk'):
                 crosswalk = feature.crosswalk
-                polygon = [[pt.x, pt.y] for pt in crosswalk.polygon]
+                polygon = [[pt.x, pt.y, pt.z] for pt in crosswalk.polygon]
                 features['crosswalks'].append({
                     'id': feature_id,
                     'polygon': polygon
@@ -122,14 +180,22 @@ class WaymoDataLoader:
                 stop_sign = feature.stop_sign
                 features['stop_signs'].append({
                     'id': feature_id,
-                    'position': [stop_sign.position.x, stop_sign.position.y],
+                    'position': [stop_sign.position.x, stop_sign.position.y, stop_sign.position.z],
                     'lane_ids': list(stop_sign.lane)
                 })
                 
             elif feature.HasField('speed_bump'):
                 speed_bump = feature.speed_bump
-                polygon = [[pt.x, pt.y] for pt in speed_bump.polygon]
+                polygon = [[pt.x, pt.y, pt.z] for pt in speed_bump.polygon]
                 features['speed_bumps'].append({
+                    'id': feature_id,
+                    'polygon': polygon
+                })
+                
+            elif feature.HasField('driveway'):
+                driveway = feature.driveway
+                polygon = [[pt.x, pt.y, pt.z] for pt in driveway.polygon]
+                features['driveways'].append({
                     'id': feature_id,
                     'polygon': polygon
                 })
@@ -165,11 +231,13 @@ class WaymoDataLoader:
                     track_data['states'].append({
                         'x': state.center_x,
                         'y': state.center_y,
+                        'z': state.center_z,
                         'heading': state.heading,
                         'velocity_x': state.velocity_x,
                         'velocity_y': state.velocity_y,
                         'length': state.length,
                         'width': state.width,
+                        'height': state.height,
                         'valid': True
                     })
                 else:

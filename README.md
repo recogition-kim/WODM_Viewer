@@ -11,9 +11,19 @@
 ## ✨ 주요 특징
 
 ### 🗺️ 시나리오 시각화
-- **Map Features**: Lanes(차로), Road Lines(도로선), Road Edges(도로경계), Crosswalks(횡단보도), Stop Signs(정지표지), Traffic Lights(신호등)
+- **Map Features**: 
+  - Lanes(차로) - 타입별 색상, 제한속도/인접차선 정보 팝업
+  - Road Lines(도로선) - 타입별 실선/점선, 흰색/노란색 스타일 적용
+  - Road Edges(도로경계), Crosswalks(횡단보도)
+  - Stop Signs(정지표지), Traffic Lights(신호등)
+  - **Speed Bumps(과속방지턱)** - 빨간색 폴리곤
+  - **Driveways(진입로)** - 보라색 폴리곤
 - **Agents**: SDC(자율주행차), Vehicles(차량), Pedestrians(보행자), Cyclists(자전거)
+  - 3D 정보 포함 (Z 좌표, 높이)
 - **Trajectory**: 각 객체의 미래 이동 경로를 밝은 점선으로 시각화
+- **Prediction Markers**:
+  - **Tracks to Predict** - 예측 대상 객체를 다이아몬드 마커로 표시 (난이도별 색상)
+  - **Objects of Interest** - 관심 객체를 점선 원으로 하이라이트
 
 ### 🎮 재생 컨트롤
 | 모드 | 동작 |
@@ -29,13 +39,15 @@
 
 ### 🖱️ 인터랙티브 기능
 - **마우스 호버**: 객체에 붉은색 테두리 강조 표시
-- **클릭**: 객체 상세 정보 팝업 (위치, 속도, 타입 등)
+- **클릭**: 객체 상세 정보 팝업
+  - Agent: 위치(X,Y,Z), 속도, 방향, 크기, 높이
+  - Lane: 타입, 제한속도, 진입/진출 차로, 좌/우측 인접 차선
 - **드래그**: 맵 이동
 - **휠**: 줌 인/아웃
 
 ### 🌐 서버 모드
 - **개발 모드**: localhost:5000 (디버그 활성화)
-- **공개 모드**: 0.0.0.0:12345 (외부 접속 가능)
+- **공개 모드**: 0.0.0.0:12345 (외부 접속 가능, 방화벽 자동 설정)
 
 ---
 
@@ -51,14 +63,15 @@ pip install flask tensorflow numpy
 # 개발 서버 (localhost:5000)
 python app.py
 
-# 공개 서버 (0.0.0.0:12345)
+# 공개 서버 (0.0.0.0:12345, 방화벽 자동 설정)
 python app.py --mode public
 
 # 커스텀 포트
 python app.py --mode public --port 8080
 ```
 
-> ⚠️ 공개 서버 모드 시 방화벽에서 해당 포트를 열어야 합니다.
+> ✅ 공개 서버 모드 시 Windows(netsh) 및 Ubuntu(ufw)에서 방화벽 포트가 자동으로 열립니다.
+> ⚠️ 관리자/sudo 권한이 필요합니다.
 
 ---
 
@@ -66,10 +79,13 @@ python app.py --mode public --port 8080
 
 ```
 waymo_visualizer/
-├── app.py              # Flask 웹서버 (API 엔드포인트)
+├── app.py              # Flask 웹서버 (API 엔드포인트, 방화벽 설정)
 ├── data_loader.py      # TFRecord 파싱 및 데이터 로딩
 ├── requirements.txt    # Python 의존성
 ├── README.md           # 프로젝트 설명서
+├── protos/             # Proto 정의 파일
+│   ├── scenario.proto
+│   └── map.proto
 ├── templates/
 │   └── index.html      # 웹 UI 템플릿
 └── static/
@@ -111,9 +127,21 @@ DATASET_ROOT = r"I:\WaymoOpenDataset\waymo_open_dataset_motion_v_1_3_1\uncompres
 | 3 | BIKE_LANE (자전거도로) |
 
 ### Road Line Types (도로선 타입)
-| 값 | 설명 |
-|----|------|
-| 1 | BROKEN_SINGLE_WHITE (흰색 점선) |
-| 2 | SOLID_SINGLE_WHITE (흰색 실선) |
-| 6 | SOLID_SINGLE_YELLOW (노란색 실선) |
-| 7 | SOLID_DOUBLE_YELLOW (노란색 이중실선) |
+| 값 | 설명 | 시각화 |
+|----|------|--------|
+| 1 | BROKEN_SINGLE_WHITE | 흰색 점선 |
+| 2 | SOLID_SINGLE_WHITE | 흰색 실선 |
+| 3 | SOLID_DOUBLE_WHITE | 흰색 이중실선 |
+| 4 | BROKEN_SINGLE_YELLOW | 노란색 점선 |
+| 5 | BROKEN_DOUBLE_YELLOW | 노란색 이중점선 |
+| 6 | SOLID_SINGLE_YELLOW | 노란색 실선 |
+| 7 | SOLID_DOUBLE_YELLOW | 노란색 이중실선 |
+| 8 | PASSING_DOUBLE_YELLOW | 노란색 이중선 |
+
+### Prediction Difficulty (예측 난이도)
+| 값 | 설명 | 마커 색상 |
+|----|------|-----------|
+| 0 | NONE | - |
+| 1 | LEVEL_1 | 마젠타 |
+| 2 | LEVEL_2 | 빨강 |
+
